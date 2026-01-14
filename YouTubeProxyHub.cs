@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 
@@ -10,29 +9,26 @@ namespace YouTubeProxyHub
     public class YouTubeProxyHub : Hub
     {
         private static readonly HttpClient _httpClient = new HttpClient();
-        // Используем специфический User-Agent для TV-клиента
-        private const string TvUserAgent = "Mozilla/5.0 (PlayStation; PlayStation 5/8.20) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Safari/605.1.15";
+        private const string UserAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
 
         static YouTubeProxyHub()
         {
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", TvUserAgent);
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", UserAgent);
         }
 
         public async Task RequestStreamUrl(string videoId)
         {
-            Console.WriteLine($"[LOG] Stealth-запрос (TV Client) для ID: {videoId}");
+            Console.WriteLine($"[LOG] Попытка через Android TestSuite: {videoId}");
             try
             {
                 var psi = new ProcessStartInfo
                 {
                     FileName = "yt-dlp",
-                    // МЫ НЕ ИСПОЛЬЗУЕМ КУКИ (они палят смену IP)
-                    // Используем связку клиентов tv_embedded и web_embedded
-                    Arguments = $"--user-agent \"{TvUserAgent}\" " +
-                                $"--extractor-args \"youtube:player-client=tv_embedded,web_embedded\" " +
-                                $"--no-check-certificate " +
+                    // android_testsuite - самый мощный клиент для обхода 429 на серверах
+                    Arguments = $"--no-check-certificate " +
                                 $"--no-warnings " +
-                                $"-g -f \"best[ext=mp4]/best\" " +
+                                $"--extractor-args \"youtube:player-client=android_testsuite\" " +
+                                $"-g -f 18 " +
                                 $"\"https://www.youtube.com/watch?v={videoId}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -49,18 +45,18 @@ namespace YouTubeProxyHub
 
                 if (!string.IsNullOrEmpty(url) && url.StartsWith("http"))
                 {
-                    Console.WriteLine("[LOG] ✅ ПОБЕДА: Ссылка получена через Stealth-клиент.");
+                    Console.WriteLine("[LOG] ✅ УСПЕХ: Ссылка получена через TestSuite!");
                     await Clients.Caller.SendAsync("ReceiveStreamUrl", url);
                 }
                 else
                 {
-                    Console.WriteLine($"[LOG] ❌ YouTube заблокировал даже TV-клиент: {error}");
-                    // Если это не сработает, Render как хостинг для этого проекта бесполезен из-за IP-бана
+                    Console.WriteLine($"[LOG] ❌ Ошибка TestSuite: {error}");
+                    // Если это не сработает, значит IP Render во Франкфурте забанен тотально.
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[LOG] ❌ Ошибка Hub: {ex.Message}");
+                Console.WriteLine($"[LOG] ❌ Критическая ошибка: {ex.Message}");
             }
         }
 
@@ -70,7 +66,7 @@ namespace YouTubeProxyHub
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(start, end);
-                request.Headers.Add("User-Agent", TvUserAgent);
+                request.Headers.Add("User-Agent", UserAgent);
 
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
                 var bytes = await response.Content.ReadAsByteArrayAsync();
