@@ -1,0 +1,6 @@
+@YouTubeProxyHub_HostAddress = http://localhost:5077
+
+GET {{YouTubeProxyHub_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
