@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System;
 
 namespace YouTubeProxyHub
 {
@@ -10,7 +11,10 @@ namespace YouTubeProxyHub
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Настройка CORS для iframe
+            // Читаем порт из переменной окружения Render (по умолчанию 8080)
+            var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+            builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy("AllowAll", policy =>
@@ -28,17 +32,20 @@ namespace YouTubeProxyHub
 
             var app = builder.Build();
 
-            // Swagger всегда включен
+            // Включаем Swagger всегда для тестов
             app.UseSwagger();
             app.UseSwaggerUI();
 
-            app.UseHttpsRedirection();
+            // На Render HTTPS redirection не нужен внутри контейнера
+            if (!app.Environment.IsDevelopment())
+            {
+                app.UseHsts();
+            }
+
             app.UseCors("AllowAll");
 
-            // Регистрация Хаба
             app.MapHub<YouTubeProxyHub>("/proxyhub");
-
-            app.MapGet("/", () => "YouTube Proxy Hub is running! .NET 9");
+            app.MapGet("/", () => "YouTube Proxy Hub is running on Render!");
 
             app.Run();
         }
