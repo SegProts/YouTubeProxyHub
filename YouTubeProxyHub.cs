@@ -10,8 +10,8 @@ namespace YouTubeProxyHub
     public class YouTubeProxyHub : Hub
     {
         private static readonly HttpClient _httpClient = new HttpClient();
-        // Используем User-Agent, максимально похожий на тот, под которым были получены куки
-        private const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
+        // ВАЖНО: Мы будем имитировать мобильный Android-браузер
+        private const string UserAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
 
         static YouTubeProxyHub()
         {
@@ -28,18 +28,18 @@ namespace YouTubeProxyHub
                 await File.WriteAllTextAsync(cookiePath, cookiesEnv);
             }
 
-            Console.WriteLine($"[LOG] Запрос ссылки через Cookies для: {videoId}");
+            Console.WriteLine($"[LOG] Проверка видео через Android-клиент: {videoId}");
             try
             {
                 var psi = new ProcessStartInfo
                 {
                     FileName = "yt-dlp",
-                    // КРИТИЧНО: используем клиент 'web' (он поддерживает куки) и 'tv' (он дает стабильные ссылки)
+                    // Используем клиент 'android', он лучше всего работает на серверных IP
                     Arguments = $"--cookies \"{cookiePath}\" " +
                                 $"--user-agent \"{UserAgent}\" " +
-                                $"--extractor-args \"youtube:player-client=web,tv\" " +
-                                $"-g --no-playlist --format \"best[ext=mp4]/best\" " +
-                                $"https://www.youtube.com/watch?v={videoId}",
+                                $"--extractor-args \"youtube:player-client=android\" " +
+                                $"--no-check-certificate --no-warnings " +
+                                $"-g -f 18 \"https://www.youtube.com/watch?v={videoId}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -47,7 +47,6 @@ namespace YouTubeProxyHub
                 };
 
                 using var process = Process.Start(psi);
-
                 var outputTask = process.StandardOutput.ReadToEndAsync();
                 var errorTask = process.StandardError.ReadToEndAsync();
 
@@ -56,17 +55,17 @@ namespace YouTubeProxyHub
 
                 if (!string.IsNullOrEmpty(url) && url.StartsWith("http"))
                 {
-                    Console.WriteLine("[LOG] ✅ УСПЕХ: Прямая ссылка получена.");
+                    Console.WriteLine("[LOG] ✅ ПОБЕДА: Ссылка получена через Android-API.");
                     await Clients.Caller.SendAsync("ReceiveStreamUrl", url);
                 }
                 else
                 {
-                    Console.WriteLine($"[LOG] ❌ ОШИБКА YouTube: {error}");
+                    Console.WriteLine($"[LOG] ❌ YouTube всё еще блокирует: {error}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[LOG] ❌ КРИТИЧЕСКАЯ ОШИБКА: {ex.Message}");
+                Console.WriteLine($"[LOG] ❌ Ошибка процесса: {ex.Message}");
             }
             finally
             {
@@ -74,27 +73,24 @@ namespace YouTubeProxyHub
             }
         }
 
-        public async Task RequestChunk(string url, long startByte, long endByte, string requestId)
+        public async Task RequestChunk(string url, long start, long end, string requestId)
         {
             try
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(startByte, endByte);
+                request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(start, end);
                 request.Headers.Add("User-Agent", UserAgent);
 
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
                 var bytes = await response.Content.ReadAsByteArrayAsync();
 
                 string base64Data = Convert.ToBase64String(bytes);
-                long total = response.Content.Headers.ContentRange?.Length ?? (startByte + bytes.Length);
-                string rangeInfo = $"bytes {startByte}-{startByte + bytes.Length - 1}/{total}";
+                long total = response.Content.Headers.ContentRange?.Length ?? (start + bytes.Length);
+                string rangeInfo = $"bytes {start}-{start + bytes.Length - 1}/{total}";
 
                 await Clients.Caller.SendAsync("ReceiveChunk", base64Data, rangeInfo, requestId);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[LOG] Ошибка чанка: {ex.Message}");
-            }
+            catch (Exception ex) { Console.WriteLine($"[LOG] Ошибка чанка: {ex.Message}"); }
         }
     }
 }
