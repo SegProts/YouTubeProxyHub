@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SignalR Proxy Test</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        #log { border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: auto; background: #f0f0f0; }
+    </style>
+</head>
+<body>
+<h1>YouTube Proxy Tunnel Test (Internal)</h1>
+<input type="text" id="msg" placeholder="Сообщение в туннель...">
+<button onclick="send()">Отправить</button>
+<h3>Лог:</h3>
+<div id="log"></div>
+
+<script>
+    // Используем относительный путь, так как фронт лежит на том же сервере
+    const connection = new signalR.HubConnectionBuilder()
+        .withUrl("/proxyhub")
+        .withAutomaticReconnect()
+        .build();
+
+    connection.on("ReceiveChunk", (data) => {
+        const div = document.createElement("div");
+        div.textContent = "> " + data;
+        document.getElementById("log").appendChild(div);
+    });
+
+    async function start() {
+        try {
+            await connection.start();
+            console.log("Connected to Hub");
+        } catch (err) {
+            setTimeout(start, 5000);
+        }
+    }
+
+    async function send() {
+        const val = document.getElementById("msg").value;
+        await connection.invoke("SendChunk", val);
+    }
+
+    start();
+</script>
+</body>
+</html>

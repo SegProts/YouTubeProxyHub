@@ -11,7 +11,6 @@ namespace YouTubeProxyHub
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Читаем порт из переменной окружения Render (по умолчанию 8080)
             var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
             builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
@@ -32,20 +31,16 @@ namespace YouTubeProxyHub
 
             var app = builder.Build();
 
-            // Включаем Swagger всегда для тестов
+            // Включаем поддержку статических файлов (index.html из wwwroot)
+            app.UseDefaultFiles();
+            app.UseStaticFiles();
+
             app.UseSwagger();
             app.UseSwaggerUI();
-
-            // На Render HTTPS redirection не нужен внутри контейнера
-            if (!app.Environment.IsDevelopment())
-            {
-                app.UseHsts();
-            }
-
             app.UseCors("AllowAll");
 
             app.MapHub<YouTubeProxyHub>("/proxyhub");
-            app.MapGet("/", () => "YouTube Proxy Hub is running on Render!");
+            app.MapGet("/status", () => "Server is up!");
 
             app.Run();
         }
