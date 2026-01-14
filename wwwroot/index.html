@@ -1,18 +1,29 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>YouTube No-VPN Proxy</title>
+    <title>YouTube Proxy No-VPN</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+    <style>
+        body { background: #121212; color: white; font-family: sans-serif; text-align: center; }
+        .container { margin-top: 50px; }
+        input { padding: 12px; width: 300px; border-radius: 4px; border: none; }
+        button { padding: 12px 24px; background: #e50914; color: white; border: none; cursor: pointer; font-weight: bold; }
+        #status { margin: 10px; color: #aaa; font-size: 0.9em; }
+        video { margin-top: 20px; background: black; border: 1px solid #333; }
+    </style>
 </head>
-<body style="background:#000; color:#fff; text-align:center;">
-<h1>YouTube No-VPN Tunnel</h1>
-<input type="text" id="videoId" placeholder="ID видео" style="padding:10px;">
-<button onclick="loadVideo()" style="padding:10px;">Смотреть</button>
-<br>
-<video id="player" controls width="800" style="margin-top:20px;"></video>
+<body>
+<div class="container">
+    <h1>YouTube Proxy</h1>
+    <input type="text" id="videoId" placeholder="ID видео (например, dQw4w9WgXcQ)">
+    <button onclick="loadVideo()">СМОТРЕТЬ</button>
+    <div id="status">Подключение к серверу...</div>
+    <video id="player" controls width="800" height="450"></video>
+</div>
 
 <script>
+    const statusEl = document.getElementById("status");
     const connection = new signalR.HubConnectionBuilder()
         .withUrl("/proxyhub")
         .withAutomaticReconnect()
@@ -23,9 +34,11 @@
             const { requestId, url, range } = event.data;
             const parts = range.replace(/bytes=/, "").split("-");
             const start = parseInt(parts[0], 10);
-            const end = start + 1048575; // 1MB
+            // Просим по 512КБ для стабильности на Free Tier
+            const end = start + 524287;
 
-            await connection.invoke("RequestChunk", url, start, end, requestId);
+            connection.invoke("RequestChunk", url, start, end, requestId)
+                .catch(err => console.error("SignalR Invoke Error:", err));
         }
     });
 
@@ -41,18 +54,32 @@
     });
 
     connection.on("ReceiveStreamUrl", (url) => {
+        statusEl.innerText = "Поток найден! Загрузка плеера...";
         const video = document.getElementById("player");
-        video.src = "/proxy-video?url=" + encodeURIComponent(url);
-        video.play();
+        // Очищаем предыдущий источник
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+
+        // Устанавливаем новый прокси-адрес
+        video.src = "/proxy-video?url=" + encodeURIComponent(url) + "&t=" + Date.now();
+        video.play().catch(e => console.warn("Автоплей заблокирован, нажмите Play вручную."));
     });
 
     async function loadVideo() {
         const id = document.getElementById("videoId").value;
+        if (!id) return;
+        statusEl.innerText = "Ищем видео на YouTube...";
         await connection.invoke("RequestStreamUrl", id);
     }
 
-    navigator.serviceWorker.register('/sw.js');
-    connection.start();
+    navigator.serviceWorker.register('/sw.js').then(() => {
+        statusEl.innerText = "Система готова (Service Worker OK)";
+    });
+
+    connection.start().then(() => {
+        statusEl.innerText = "Подключено к Хабу (SignalR OK)";
+    });
 </script>
 </body>
 </html>

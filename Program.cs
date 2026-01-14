@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.SignalR;
 using System;
 
 namespace YouTubeProxyHub
@@ -16,19 +17,19 @@ namespace YouTubeProxyHub
 
             builder.Services.AddCors(options =>
             {
-                options.AddPolicy("AllowAll", policy =>
-                {
-                    policy.AllowAnyHeader()
-                        .AllowAnyMethod()
-                        .SetIsOriginAllowed(_ => true)
-                        .AllowCredentials();
-                });
+                options.AddPolicy("AllowAll",
+                    policy =>
+                    {
+                        policy.AllowAnyHeader().AllowAnyMethod().SetIsOriginAllowed(_ => true).AllowCredentials();
+                    });
             });
 
+            // Увеличиваем лимиты SignalR для передачи видео-данных
             builder.Services.AddSignalR(options =>
             {
                 options.EnableDetailedErrors = true;
-                options.MaximumReceiveMessageSize = 10 * 1024 * 1024; // 10MB для чанков
+                options.MaximumReceiveMessageSize = 32 * 1024 * 1024; // 32MB
+                options.StreamBufferCapacity = 1024;
             });
 
             builder.Services.AddEndpointsApiExplorer();
@@ -38,15 +39,12 @@ namespace YouTubeProxyHub
 
             app.UseDefaultFiles();
             app.UseStaticFiles();
-
-            app.UseSwagger();
-            app.UseSwaggerUI();
             app.UseCors("AllowAll");
 
             app.MapHub<YouTubeProxyHub>("/proxyhub");
-            app.MapGet("/status", () => "Hub is Online");
+            app.MapGet("/status", () => "Server is Running");
 
-            app.Run(); //Done
+            app.Run();
         }
     }
 }
