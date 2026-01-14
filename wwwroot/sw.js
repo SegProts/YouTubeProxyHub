@@ -10,13 +10,14 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(new Promise(async (resolve) => {
             const requestId = Math.random().toString(36).substring(7);
 
-            // Создаем канал связи с основной страницей (index.html)
-            const client = await clients.get(event.clientId);
+            const allClients = await clients.matchAll();
+            const client = allClients[0]; // Берем активную вкладку
+
             if (!client) return resolve(fetch(event.request));
 
             pendingRequests.set(requestId, resolve);
 
-            // Просим страницу скачать чанк через SignalR
+            // Шлем запрос в index.html
             client.postMessage({
                 type: 'request-chunk',
                 requestId: requestId,
@@ -27,7 +28,6 @@ self.addEventListener('fetch', (event) => {
     }
 });
 
-// Получаем байты от страницы и отдаем их браузеру
 self.addEventListener('message', (event) => {
     if (event.data.type === 'deliver-chunk') {
         const resolve = pendingRequests.get(event.data.requestId);
@@ -44,7 +44,8 @@ self.addEventListener('message', (event) => {
                 headers: {
                     'Content-Type': 'video/webm',
                     'Content-Range': event.data.range,
-                    'Accept-Ranges': 'bytes'
+                    'Accept-Ranges': 'bytes',
+                    'Content-Length': bytes.length
                 }
             });
             resolve(response);
