@@ -1,3 +1,8 @@
+// v2 - Принудительное обновление
+self.addEventListener('install', (event) => {
+    self.skipWaiting();
+});
+
 const pendingRequests = new Map();
 
 self.addEventListener('fetch', (event) => {
@@ -9,15 +14,16 @@ self.addEventListener('fetch', (event) => {
 
         event.respondWith(new Promise(async (resolve) => {
             const requestId = Math.random().toString(36).substring(7);
-
             const allClients = await clients.matchAll();
-            const client = allClients[0]; // Берем активную вкладку
+            const client = allClients.find(c => c.type === 'window');
 
-            if (!client) return resolve(fetch(event.request));
+            if (!client) {
+                // Если нет окна, пробуем обычный запрос (но это не сработает из-за CORS)
+                return resolve(fetch(event.request));
+            }
 
             pendingRequests.set(requestId, resolve);
 
-            // Шлем запрос в index.html
             client.postMessage({
                 type: 'request-chunk',
                 requestId: requestId,
@@ -38,17 +44,15 @@ self.addEventListener('message', (event) => {
                 bytes[i] = binaryString.charCodeAt(i);
             }
 
-            const response = new Response(bytes, {
+            resolve(new Response(bytes, {
                 status: 206,
-                statusText: 'Partial Content',
                 headers: {
-                    'Content-Type': 'video/webm',
+                    'Content-Type': 'video/mp4',
                     'Content-Range': event.data.range,
                     'Accept-Ranges': 'bytes',
                     'Content-Length': bytes.length
                 }
-            });
-            resolve(response);
+            }));
             pendingRequests.delete(event.data.requestId);
         }
     }

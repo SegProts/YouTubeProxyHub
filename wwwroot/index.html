@@ -1,24 +1,16 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
     <meta charset="UTF-8">
-    <title>YouTube Proxy Tunnel</title>
+    <title>YouTube Proxy</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
-    <style>
-        body { font-family: sans-serif; background: #1a1a1a; color: white; text-align: center; }
-        video { margin-top: 20px; border: 2px solid #ff0000; background: black; }
-        .controls { margin: 20px; }
-        input { padding: 10px; width: 300px; border-radius: 5px; border: none; }
-        button { padding: 10px 20px; background: #ff0000; color: white; border: none; cursor: pointer; border-radius: 5px; }
-    </style>
 </head>
-<body>
-<h1>YouTube Proxy Tunnel</h1>
-<div class="controls">
-    <input type="text" id="videoId" placeholder="ID видео (например, dQw4w9WgXcQ)">
-    <button onclick="loadVideo()">Смотреть</button>
-</div>
-<video id="player" controls width="800" height="450"></video>
+<body style="background:#000; color:#fff; text-align:center;">
+<h1>YouTube Tunnel</h1>
+<input type="text" id="videoId" placeholder="ID видео">
+<button onclick="loadVideo()">Смотреть</button>
+<br>
+<video id="player" controls width="800"></video>
 
 <script>
     const connection = new signalR.HubConnectionBuilder()
@@ -26,38 +18,33 @@
         .withAutomaticReconnect()
         .build();
 
-    let currentRequestId = null;
-
-    // 1. Слушаем сообщения от Service Worker (запросы байтов)
+    // Связь SW -> SignalR
     navigator.serviceWorker.addEventListener('message', async (event) => {
         if (event.data.type === 'request-chunk') {
             const { requestId, url, range } = event.data;
-            currentRequestId = requestId;
-
             const parts = range.replace(/bytes=/, "").split("-");
             const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : start + 1048575; // чанк ~1МБ
+            const end = parts[1] ? parseInt(parts[1], 10) : start + 1048575;
 
-            console.log(`Запрос чанка через SignalR: ${start}-${end}`);
             await connection.invoke("RequestChunk", url, start, end);
+            // Сохраняем ID для ответа
+            window.lastRequestId = requestId;
         }
     });
 
-    // 2. Получаем байты от Хаба (от Фетчера) и шлем их в SW
+    // Связь SignalR -> SW
     connection.on("ReceiveChunk", (base64, rangeInfo) => {
         if (navigator.serviceWorker.controller) {
             navigator.serviceWorker.controller.postMessage({
                 type: 'deliver-chunk',
-                requestId: currentRequestId,
+                requestId: window.lastRequestId,
                 base64: base64,
                 range: rangeInfo
             });
         }
     });
 
-    // 3. Получение прямой ссылки
     connection.on("ReceiveStreamUrl", (url) => {
-        console.log("Ссылка получена. Проксируем через SW...");
         const video = document.getElementById("player");
         video.src = "/proxy-video?url=" + encodeURIComponent(url);
         video.play();
@@ -65,13 +52,12 @@
 
     async function loadVideo() {
         const vid = document.getElementById("videoId").value;
-        if (!vid) return;
         await connection.invoke("RequestStreamUrl", vid);
     }
 
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').then(() => {
-            console.log("SW активирован");
+        navigator.serviceWorker.register('/sw.js').then(reg => {
+            reg.update(); // Принудительно ищем новую версию
         });
     }
 
