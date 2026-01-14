@@ -11,6 +11,7 @@ namespace YouTubeProxyHub
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            // Настройка порта для Render
             var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
             builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
@@ -31,7 +32,7 @@ namespace YouTubeProxyHub
 
             var app = builder.Build();
 
-            // Включаем поддержку статических файлов (index.html из wwwroot)
+            // Включаем раздачу файлов из wwwroot (index.html, sw.js)
             app.UseDefaultFiles();
             app.UseStaticFiles();
 
@@ -40,7 +41,7 @@ namespace YouTubeProxyHub
             app.UseCors("AllowAll");
 
             app.MapHub<YouTubeProxyHub>("/proxyhub");
-            app.MapGet("/status", () => "Server is up!");
+            app.MapGet("/status", () => "Hub is Online");
 
             app.Run();
         }
