@@ -44,7 +44,7 @@ namespace YouTubeProxyHub
             app.MapHub<YouTubeProxyHub>("/proxyhub");
             app.MapGet("/status", () => "Server is Running");
 
-            app.Run();
+            app.Run(); //Done
         }
     }
 }
