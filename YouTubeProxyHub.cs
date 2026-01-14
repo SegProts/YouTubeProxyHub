@@ -5,10 +5,16 @@ namespace YouTubeProxyHub
 {
     public class YouTubeProxyHub : Hub
     {
-        public async Task SendChunk(string chunkData)
+        // Клиент (браузер) вызывает этот метод, чтобы попросить Фетчер скачать видео
+        public async Task RequestChunk(string url, long startByte, long endByte)
         {
-            // Пересылка данных всем остальным подключенным клиентам
-            await Clients.Others.SendAsync("ReceiveChunk", chunkData);
+            await Clients.Others.SendAsync("FetchChunk", Context.ConnectionId, url, startByte, endByte);
+        }
+
+        // Фетчер вызывает этот метод, чтобы передать скачанные байты обратно конкретному клиенту
+        public async Task DeliverChunk(string clientId, string base64Data)
+        {
+            await Clients.Client(clientId).SendAsync("ReceiveChunk", base64Data);
         }
     }
 }
