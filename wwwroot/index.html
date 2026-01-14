@@ -2,15 +2,15 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>YouTube Proxy</title>
+    <title>YouTube Tunnel</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
 </head>
-<body style="background:#000; color:#fff; text-align:center; font-family:sans-serif;">
-<h1>YouTube Tunnel v2</h1>
+<body style="background:#1a1a1a; color:white; text-align:center;">
+<h1>YouTube Proxy Tunnel</h1>
 <input type="text" id="videoId" placeholder="ID видео" style="padding:10px; width:300px;">
-<button onclick="loadVideo()" style="padding:10px 20px; background:red; color:white; border:none; cursor:pointer;">Смотреть</button>
+<button onclick="loadVideo()" style="padding:10px 20px; background:red; color:white; border:none; border-radius:5px; cursor:pointer;">Загрузить</button>
 <br>
-<video id="player" controls width="800" style="margin-top:20px;"></video>
+<video id="player" controls width="800" height="450" style="margin-top:20px; background:black;"></video>
 
 <script>
     const connection = new signalR.HubConnectionBuilder()
@@ -18,27 +18,27 @@
         .withAutomaticReconnect()
         .build();
 
-    // Карта активных запросов
-    const requestMap = new Map();
-
+    // Обработка сообщений от SW
     navigator.serviceWorker.addEventListener('message', async (event) => {
         if (event.data.type === 'request-chunk') {
             const { requestId, url, range } = event.data;
             const parts = range.replace(/bytes=/, "").split("-");
             const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : start + 2000000; // Просим по 2МБ
+            // Запрашиваем чанк 1МБ
+            const end = parts[1] ? parseInt(parts[1], 10) : start + 1048575;
 
-            requestMap.set(requestId, requestId);
+            // Сохраняем текущий requestId для этого запроса
+            window.lastReqId = requestId;
             await connection.invoke("RequestChunk", url, start, end);
-            window.lastId = requestId;
         }
     });
 
+    // Ответ от SignalR
     connection.on("ReceiveChunk", (base64, rangeInfo, totalSize) => {
         if (navigator.serviceWorker.controller) {
             navigator.serviceWorker.controller.postMessage({
                 type: 'deliver-chunk',
-                requestId: window.lastId,
+                requestId: window.lastReqId,
                 base64: base64,
                 range: rangeInfo
             });
@@ -52,8 +52,8 @@
     });
 
     async function loadVideo() {
-        const vid = document.getElementById("videoId").value;
-        await connection.invoke("RequestStreamUrl", vid);
+        const id = document.getElementById("videoId").value;
+        await connection.invoke("RequestStreamUrl", id);
     }
 
     if ('serviceWorker' in navigator) {
