@@ -2,21 +2,15 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>YouTube Proxy Player</title>
+    <title>YouTube Proxy Tunnel</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
-    <style>
-        body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: white; }
-        video { margin-top: 20px; border: 2px solid #ff0000; background: black; }
-        input { padding: 10px; width: 300px; border-radius: 5px; border: none; }
-        button { padding: 10px 20px; background: #ff0000; color: white; border: none; cursor: pointer; border-radius: 5px; }
-    </style>
 </head>
-<body>
+<body style="background: #1a1a1a; color: white; text-align: center;">
 <h1>YouTube Proxy Tunnel</h1>
-<input type="text" id="videoId" placeholder="Введите ID видео (например, dQw4w9WgXcQ)">
-<button onclick="loadVideo()">Смотреть через туннель</button>
+<input type="text" id="videoId" placeholder="ID видео">
+<button onclick="loadVideo()">Смотреть</button>
 <br>
-<video id="player" controls width="800" height="450"></video>
+<video id="player" controls width="800"></video>
 
 <script>
     const connection = new signalR.HubConnectionBuilder()
@@ -24,28 +18,51 @@
         .withAutomaticReconnect()
         .build();
 
-    // Регистрация Service Worker
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').then(() => console.log("SW готов"));
-    }
+    let currentRequestId = null;
 
-    // Получение ссылки от Фетчера
+    // 1. Слушаем сообщения от Service Worker
+    navigator.serviceWorker.addEventListener('message', async (event) => {
+        if (event.data.type === 'request-chunk') {
+            const { requestId, url, range } = event.data;
+            currentRequestId = requestId;
+
+            // Парсим range (например, "bytes=0-1000000")
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : start + 1000000; // качаем по 1МБ
+
+            // Просим Хаб (и Фетчер) скачать байты
+            await connection.invoke("RequestChunk", url, start, end);
+        }
+    });
+
+    // 2. Получаем байты от Хаба (от Фетчера)
+    connection.on("ReceiveChunk", (base64) => {
+        if (navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+                type: 'deliver-chunk',
+                requestId: currentRequestId,
+                base64: base64
+            });
+        }
+    });
+
     connection.on("ReceiveStreamUrl", (url) => {
-        console.log("Прямая ссылка получена. Загрузка...");
         const video = document.getElementById("player");
-        // Добавляем префикс, чтобы SW перехватил запрос
         video.src = "/proxy-video?url=" + encodeURIComponent(url);
         video.play();
     });
 
     async function loadVideo() {
         const vid = document.getElementById("videoId").value;
-        if (!vid) return alert("Введите ID");
-        console.log("Запрос ссылки для:", vid);
         await connection.invoke("RequestStreamUrl", vid);
     }
 
-    connection.start().then(() => console.log("Подключено к Хабу"));
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+    }
+
+    connection.start();
 </script>
 </body>
 </html>
