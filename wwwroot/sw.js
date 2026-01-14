@@ -1,4 +1,4 @@
-self.addEventListener('install', (event) => self.skipWaiting());
+self.addEventListener('install', () => self.skipWaiting());
 
 const pendingRequests = new Map();
 
@@ -12,18 +12,12 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(new Promise(async (resolve) => {
             const requestId = Math.random().toString(36).substring(7);
             const clientsList = await clients.matchAll();
-            const client = clientsList.find(c => c.type === 'window');
+            const client = clientsList[0];
 
-            if (!client) return resolve(fetch(targetUrl)); // Fallback
+            if (!client) return resolve(fetch(targetUrl));
 
             pendingRequests.set(requestId, resolve);
-
-            client.postMessage({
-                type: 'request-chunk',
-                requestId: requestId,
-                url: targetUrl,
-                range: range
-            });
+            client.postMessage({ type: 'request-chunk', requestId, url: targetUrl, range });
         }));
     }
 });
@@ -35,13 +29,6 @@ self.addEventListener('message', (event) => {
             const binary = atob(event.data.base64);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-            // Если чанк пустой - это ошибка
-            if (bytes.length === 0) {
-                console.error("SW: Получен пустой чанк");
-                resolve(new Response(null, { status: 404 }));
-                return;
-            }
 
             resolve(new Response(bytes, {
                 status: 206,

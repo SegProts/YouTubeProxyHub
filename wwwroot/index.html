@@ -2,15 +2,15 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>YouTube Tunnel</title>
+    <title>YouTube No-VPN Proxy</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
 </head>
-<body style="background:#1a1a1a; color:white; text-align:center;">
-<h1>YouTube Proxy Tunnel</h1>
-<input type="text" id="videoId" placeholder="ID видео" style="padding:10px; width:300px;">
-<button onclick="loadVideo()" style="padding:10px 20px; background:red; color:white; border:none; border-radius:5px; cursor:pointer;">Загрузить</button>
+<body style="background:#000; color:#fff; text-align:center;">
+<h1>YouTube No-VPN Tunnel</h1>
+<input type="text" id="videoId" placeholder="ID видео" style="padding:10px;">
+<button onclick="loadVideo()" style="padding:10px;">Смотреть</button>
 <br>
-<video id="player" controls width="800" height="450" style="margin-top:20px; background:black;"></video>
+<video id="player" controls width="800" style="margin-top:20px;"></video>
 
 <script>
     const connection = new signalR.HubConnectionBuilder()
@@ -18,27 +18,22 @@
         .withAutomaticReconnect()
         .build();
 
-    // Обработка сообщений от SW
     navigator.serviceWorker.addEventListener('message', async (event) => {
         if (event.data.type === 'request-chunk') {
             const { requestId, url, range } = event.data;
             const parts = range.replace(/bytes=/, "").split("-");
             const start = parseInt(parts[0], 10);
-            // Запрашиваем чанк 1МБ
-            const end = parts[1] ? parseInt(parts[1], 10) : start + 1048575;
+            const end = start + 1048575; // 1MB
 
-            // Сохраняем текущий requestId для этого запроса
-            window.lastReqId = requestId;
-            await connection.invoke("RequestChunk", url, start, end);
+            await connection.invoke("RequestChunk", url, start, end, requestId);
         }
     });
 
-    // Ответ от SignalR
-    connection.on("ReceiveChunk", (base64, rangeInfo, totalSize) => {
+    connection.on("ReceiveChunk", (base64, rangeInfo, requestId) => {
         if (navigator.serviceWorker.controller) {
             navigator.serviceWorker.controller.postMessage({
                 type: 'deliver-chunk',
-                requestId: window.lastReqId,
+                requestId: requestId,
                 base64: base64,
                 range: rangeInfo
             });
@@ -56,10 +51,7 @@
         await connection.invoke("RequestStreamUrl", id);
     }
 
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').then(r => r.update());
-    }
-
+    navigator.serviceWorker.register('/sw.js');
     connection.start();
 </script>
 </body>
