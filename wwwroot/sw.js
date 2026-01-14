@@ -1,7 +1,4 @@
-// v2 - Принудительное обновление
-self.addEventListener('install', (event) => {
-    self.skipWaiting();
-});
+self.addEventListener('install', (event) => self.skipWaiting());
 
 const pendingRequests = new Map();
 
@@ -14,13 +11,10 @@ self.addEventListener('fetch', (event) => {
 
         event.respondWith(new Promise(async (resolve) => {
             const requestId = Math.random().toString(36).substring(7);
-            const allClients = await clients.matchAll();
-            const client = allClients.find(c => c.type === 'window');
+            const clientsList = await clients.matchAll();
+            const client = clientsList[0];
 
-            if (!client) {
-                // Если нет окна, пробуем обычный запрос (но это не сработает из-за CORS)
-                return resolve(fetch(event.request));
-            }
+            if (!client) return resolve(fetch(event.request));
 
             pendingRequests.set(requestId, resolve);
 
@@ -38,11 +32,9 @@ self.addEventListener('message', (event) => {
     if (event.data.type === 'deliver-chunk') {
         const resolve = pendingRequests.get(event.data.requestId);
         if (resolve) {
-            const binaryString = atob(event.data.base64);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
+            const binary = atob(event.data.base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
             resolve(new Response(bytes, {
                 status: 206,
