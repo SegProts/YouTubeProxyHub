@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 
@@ -17,14 +18,22 @@ namespace YouTubeProxyHub
 
         public async Task RequestStreamUrl(string videoId)
         {
+            string cookiePath = Path.Combine(Path.GetTempPath(), "cookies.txt");
+            string cookiesEnv = Environment.GetEnvironmentVariable("YOUTUBE_COOKIES");
+
+            if (!string.IsNullOrEmpty(cookiesEnv))
+            {
+                await File.WriteAllTextAsync(cookiePath, cookiesEnv);
+            }
+
             Console.WriteLine($"[LOG] Запрос ссылки для ID: {videoId}");
             try
             {
                 var psi = new ProcessStartInfo
                 {
                     FileName = "yt-dlp",
-                    // Выбираем формат 18 (mp4, 360p) - он самый стабильный для проксирования
-                    Arguments = $"-g --no-playlist --format 18 https://www.youtube.com/watch?v={videoId}",
+                    // Используем куки и принудительно эмулируем клиент iOS (он стабильнее)
+                    Arguments = $"--cookies \"{cookiePath}\" --extractor-args \"youtube:player-client=ios\" -g --no-playlist --format 18 https://www.youtube.com/watch?v={videoId}",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -37,17 +46,21 @@ namespace YouTubeProxyHub
 
                 if (!string.IsNullOrEmpty(url) && url.StartsWith("http"))
                 {
-                    Console.WriteLine($"[LOG] Ссылка найдена: {url.Substring(0, 30)}...");
+                    Console.WriteLine("[LOG] УСПЕХ: Ссылка получена с использованием Cookies.");
                     await Clients.Caller.SendAsync("ReceiveStreamUrl", url);
                 }
                 else
                 {
-                    Console.WriteLine($"[LOG] Ошибка yt-dlp: {error}");
+                    Console.WriteLine($"[LOG] ОШИБКА YouTube: {error}");
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[LOG] Ошибка Hub: {ex.Message}");
+            }
+            finally
+            {
+                if (File.Exists(cookiePath)) File.Delete(cookiePath);
             }
         }
 
@@ -57,21 +70,14 @@ namespace YouTubeProxyHub
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(startByte, endByte);
-
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
                 var bytes = await response.Content.ReadAsByteArrayAsync();
 
-                long totalSize = response.Content.Headers.ContentRange?.Length ?? (startByte + bytes.Length);
                 string base64Data = Convert.ToBase64String(bytes);
-                string rangeInfo = $"bytes {startByte}-{startByte + bytes.Length - 1}/{totalSize}";
-
+                string rangeInfo = $"bytes {startByte}-{startByte + bytes.Length - 1}/{response.Content.Headers.ContentRange?.Length ?? (startByte + bytes.Length)}";
                 await Clients.Caller.SendAsync("ReceiveChunk", base64Data, rangeInfo, requestId);
-                // Console.WriteLine($"[LOG] Чанк отправлен: {rangeInfo}");
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[LOG] Ошибка чанка: {ex.Message}");
-            }
+            catch (Exception ex) { Console.WriteLine($"[LOG] Ошибка чанка: {ex.Message}"); }
         }
     }
 }
