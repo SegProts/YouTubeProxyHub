@@ -10,6 +10,7 @@ namespace YouTubeProxyHub
     public class YouTubeProxyHub : Hub
     {
         private static readonly HttpClient _httpClient = new HttpClient();
+        // Используем User-Agent, максимально похожий на тот, под которым были получены куки
         private const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
 
         static YouTubeProxyHub()
@@ -19,32 +20,25 @@ namespace YouTubeProxyHub
 
         public async Task RequestStreamUrl(string videoId)
         {
-            // Создаем временный файл для кук
             string cookiePath = Path.Combine(Path.GetTempPath(), $"cookies_{Guid.NewGuid()}.txt");
             string cookiesEnv = Environment.GetEnvironmentVariable("YOUTUBE_COOKIES");
 
             if (!string.IsNullOrEmpty(cookiesEnv))
             {
-                // Записываем куки в файл
                 await File.WriteAllTextAsync(cookiePath, cookiesEnv);
-                Console.WriteLine("[LOG] Файл кук создан.");
-            }
-            else
-            {
-                Console.WriteLine("[LOG] ПРЕДУПРЕЖДЕНИЕ: Переменная YOUTUBE_COOKIES пуста!");
             }
 
-            Console.WriteLine($"[LOG] Запрос ссылки для ID: {videoId}");
+            Console.WriteLine($"[LOG] Запрос ссылки через Cookies для: {videoId}");
             try
             {
                 var psi = new ProcessStartInfo
                 {
                     FileName = "yt-dlp",
-                    // УБРАЛИ ios, добавили web клиент и явный User-Agent
+                    // КРИТИЧНО: используем клиент 'web' (он поддерживает куки) и 'tv' (он дает стабильные ссылки)
                     Arguments = $"--cookies \"{cookiePath}\" " +
                                 $"--user-agent \"{UserAgent}\" " +
-                                $"--extractor-args \"youtube:player-client=web\" " +
-                                $"-g --no-playlist --format 18 " +
+                                $"--extractor-args \"youtube:player-client=web,tv\" " +
+                                $"-g --no-playlist --format \"best[ext=mp4]/best\" " +
                                 $"https://www.youtube.com/watch?v={videoId}",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -54,7 +48,6 @@ namespace YouTubeProxyHub
 
                 using var process = Process.Start(psi);
 
-                // Читаем вывод и ошибки асинхронно
                 var outputTask = process.StandardOutput.ReadToEndAsync();
                 var errorTask = process.StandardError.ReadToEndAsync();
 
@@ -63,21 +56,20 @@ namespace YouTubeProxyHub
 
                 if (!string.IsNullOrEmpty(url) && url.StartsWith("http"))
                 {
-                    Console.WriteLine("[LOG] УСПЕХ: Ссылка получена.");
+                    Console.WriteLine("[LOG] ✅ УСПЕХ: Прямая ссылка получена.");
                     await Clients.Caller.SendAsync("ReceiveStreamUrl", url);
                 }
                 else
                 {
-                    Console.WriteLine($"[LOG] ОШИБКА YouTube: {error}");
+                    Console.WriteLine($"[LOG] ❌ ОШИБКА YouTube: {error}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[LOG] Критическая ошибка Hub: {ex.Message}");
+                Console.WriteLine($"[LOG] ❌ КРИТИЧЕСКАЯ ОШИБКА: {ex.Message}");
             }
             finally
             {
-                // Удаляем временный файл
                 if (File.Exists(cookiePath)) File.Delete(cookiePath);
             }
         }
@@ -88,13 +80,14 @@ namespace YouTubeProxyHub
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(startByte, endByte);
+                request.Headers.Add("User-Agent", UserAgent);
 
-                // Для скачивания чанков используем тот же User-Agent
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
                 var bytes = await response.Content.ReadAsByteArrayAsync();
 
                 string base64Data = Convert.ToBase64String(bytes);
-                string rangeInfo = $"bytes {startByte}-{startByte + bytes.Length - 1}/{response.Content.Headers.ContentRange?.Length ?? (startByte + bytes.Length)}";
+                long total = response.Content.Headers.ContentRange?.Length ?? (startByte + bytes.Length);
+                string rangeInfo = $"bytes {startByte}-{startByte + bytes.Length - 1}/{total}";
 
                 await Clients.Caller.SendAsync("ReceiveChunk", base64Data, rangeInfo, requestId);
             }
